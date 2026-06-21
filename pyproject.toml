@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools >= 61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chunk-reset-cli"
+version = "0.1.0"
+description = "CLI tool to reset Minecraft world chunks in a rectangular area"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "amulet-core~=1.9,>=1.9.36",
+]
+
+[project.scripts]
+chunk-reset = "chunk_reset_cli.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["chunk_reset_cli*"]
