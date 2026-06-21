@@ -56,11 +56,33 @@ pip install -e .
 
 [ワールドフォルダの場所](#ワールドフォルダの場所windows-統合版) を参照し、`level.dat` と `db` フォルダがある **個別ワールドフォルダ** のパスを控えます。
 
-#### ② dry-run で確認
+以降のコマンド例では、次のプレースホルダーを PowerShell 変数に置き換えて使います。
+
+| プレースホルダー | 意味 | 例（あくまで参考） |
+|-----------------|------|-------------------|
+| `<ユーザーID>` | Microsoft アカウントごとのフォルダ名 | `907912747214718426` |
+| `<ワールドID>` | `minecraftWorlds` 直下のワールドフォルダ名 | `f2Tvgy1XaCQ=` |
 
 ```powershell
-chunk-reset "$env:APPDATA\Minecraft Bedrock\Users\Shared\games\com.mojang\minecraftWorlds\AbcDeFGhiJKlmNoPq" `
-  --from 0,0 --to 100,100 --dry-run
+# ご自身の環境の値に置き換える
+$userId = "<ユーザーID>"
+$worldId = "<ワールドID>"
+$worldPath = "$env:APPDATA\Minecraft Bedrock\Users\$userId\games\com.mojang\minecraftWorlds\$worldId"
+```
+
+サインアウト時など **`Shared` 配下** の場合:
+
+```powershell
+$worldId = "<ワールドID>"
+$worldPath = "$env:APPDATA\Minecraft Bedrock\Users\Shared\games\com.mojang\minecraftWorlds\$worldId"
+```
+
+#### ② dry-run で確認
+
+Microsoft アカウントでサインインしている場合、ワールドは **`Users\Shared` ではなく `<ユーザーID>` フォルダ** 配下にあることが多いです。
+
+```powershell
+chunk-reset $worldPath --from 0,0 --to 100,100 --dry-run
 ```
 
 - `World: ...` と表示されれば **パスは正しい**
@@ -70,37 +92,26 @@ chunk-reset "$env:APPDATA\Minecraft Bedrock\Users\Shared\games\com.mojang\minecr
 #### ③ 本実行
 
 ```powershell
-chunk-reset "$env:APPDATA\Minecraft Bedrock\Users\Shared\games\com.mojang\minecraftWorlds\AbcDeFGhiJKlmNoPq" `
-  --from 0,0 --to 100,100
+chunk-reset $worldPath --from 0,0 --to 100,100
 ```
 
 確認プロンプトが表示されます。スキップする場合は `-y` を付けます。
 
 ```powershell
-chunk-reset "$env:APPDATA\Minecraft Bedrock\Users\Shared\games\com.mojang\minecraftWorlds\AbcDeFGhiJKlmNoPq" `
-  --from 100,300 --to 200,400 -y
-```
-
-Microsoft アカウント配下のワールド（数字 ID は環境ごとに異なる）:
-
-```powershell
-chunk-reset "$env:APPDATA\Minecraft Bedrock\Users\11072479302056139198\games\com.mojang\minecraftWorlds\AbcDeFGhiJKlmNoPq" `
-  --from 100,300 --to 200,400 -y
+chunk-reset $worldPath --from 100,300 --to 200,400 -y
 ```
 
 ### その他の例
 
 ```powershell
 # チャンク座標で指定
-chunk-reset "$env:APPDATA\Minecraft Bedrock\Users\Shared\games\com.mojang\minecraftWorlds\AbcDeFGhiJKlmNoPq" `
-  --from 6,18 --to 12,25 --chunk-coords --dry-run
+chunk-reset $worldPath --from 6,18 --to 12,25 --chunk-coords --dry-run
 
 # ネザー / エンド
-chunk-reset "$env:APPDATA\Minecraft Bedrock\Users\Shared\games\com.mojang\minecraftWorlds\AbcDeFGhiJKlmNoPq" `
-  --from 0,0 --to 100,100 --dimension nether --dry-run
+chunk-reset $worldPath --from 0,0 --to 100,100 --dimension nether --dry-run
 ```
 
-> **パスの書き方:** `Minecraft Bedrock` にスペースが含まれるため、パスは **`"..."` で囲む** 必要があります。環境変数は PowerShell では **`$env:APPDATA`** の形式を使います（`%APPDATA%` は cmd 用で、PowerShell では展開されません）。
+> **パスの書き方:** `Minecraft Bedrock` にスペースが含まれるため、パスは **`"..."` で囲む** 必要があります。`<ワールドID>` の末尾に **`=`** が付くことがあります。環境変数は PowerShell では **`$env:APPDATA`** の形式を使います（`%APPDATA%` は cmd 用で、PowerShell では展開されません）。
 
 ---
 
@@ -111,8 +122,10 @@ chunk-reset "$env:APPDATA\Minecraft Bedrock\Users\Shared\games\com.mojang\minecr
 `chunk-reset` の第 1 引数 `world` に渡すのは **個々のワールドフォルダ** です。
 
 ```powershell
-# PowerShell でパスを確認する例
-$env:APPDATA + "\Minecraft Bedrock\Users\<Shared または数字ID>\games\com.mojang\minecraftWorlds\<ワールドフォルダ>"
+# PowerShell でパスを組み立てる例（<ユーザーID> / <ワールドID> は環境ごとに異なる）
+$userId = "<ユーザーID>"
+$worldId = "<ワールドID>"
+"$env:APPDATA\Minecraft Bedrock\Users\$userId\games\com.mojang\minecraftWorlds\$worldId"
 ```
 
 **指定してはいけない例:**
@@ -121,35 +134,41 @@ $env:APPDATA + "\Minecraft Bedrock\Users\<Shared または数字ID>\games\com.mo
 |------|------|
 | `...\Minecraft Bedrock\Users` | ワールド本体ではなくユーザー一覧 |
 | `...\minecraftWorlds` | 複数ワールドの親フォルダ |
-| ゲーム内のワールド名だけ | フォルダ名は内部 ID（ランダム文字列）のため一致しない |
+| ゲーム内のワールド名だけ | フォルダ名は `<ワールドID>`（内部 ID）のため一致しない |
 
 ### フォルダ構造（GDK 版 / 1.21.120 以降）
 
 ```
 C:\Users\<Windowsユーザー名>\AppData\Roaming\Minecraft Bedrock\
 └── Users\
-    ├── Shared\games\com.mojang\minecraftWorlds\
-    │   └── AbcDeFGhiJKlmNoPq\          ← ★ world 引数（level.dat があるフォルダ）
-    └── 11072479302056139198\games\com.mojang\minecraftWorlds\
-        └── XyZ1234567890AbCd\          ← ★ Microsoft アカウントごと
+    ├── <ユーザーID>\games\com.mojang\minecraftWorlds\   ← ★ サインイン時（よくある）
+    │   └── <ワールドID>\                               ← ★ world 引数（level.dat があるフォルダ）
+    └── Shared\games\com.mojang\minecraftWorlds\         ← サインアウト時・共有
+        └── <ワールドID>\
 ```
+
+PowerShell では `$env:APPDATA` が上記の `...\AppData\Roaming\` に相当します。
 
 ### ワールドフォルダの探し方
 
 1. `Win + R` を押し、`%appdata%\Minecraft Bedrock\Users` と入力して Enter（※ Run ダイアログでは `%appdata%` が使えます）
-2. 次のいずれかを開く  
-   - **`Shared`** … サインアウト状態・共有プロファイルのワールド  
-   - **数字だけの長いフォルダ名** … サインイン中の Microsoft アカウント用（環境ごとに異なる）
+2. **`<ユーザーID>`**（数字だけの長いフォルダ名）を開く  
+   - サインイン中の Microsoft アカウント用（**最も一般的**）  
+   - 見当たらない場合は **`Shared`**（サインアウト状態・共有プロファイル）
 3. `games` → `com.mojang` → `minecraftWorlds` と進む
-4. 中の **ランダムな英数字フォルダ** が 1 ワールド分  
+4. 中の **`<ワールドID>` フォルダ** が 1 ワールド分  
+   - 英数字に加え、末尾に **`=`** が付くことがある  
    - `level.dat` と `db` フォルダ（LevelDB）があることを確認
    - ゲーム内表示名は `levelname.txt` に書かれていることが多い
 
-PowerShell で `minecraftWorlds` 配下を一覧する例:
+PowerShell で `Users` 配下のワールドを一覧する例:
 
 ```powershell
-Get-ChildItem "$env:APPDATA\Minecraft Bedrock\Users\Shared\games\com.mojang\minecraftWorlds" |
-  ForEach-Object { "$($_.Name)  $(Get-Content (Join-Path $_.FullName 'levelname.txt') -ErrorAction SilentlyContinue)" }
+Get-ChildItem "$env:APPDATA\Minecraft Bedrock\Users\*\games\com.mojang\minecraftWorlds\*" -Directory |
+  ForEach-Object {
+    $name = Get-Content (Join-Path $_.FullName 'levelname.txt') -ErrorAction SilentlyContinue
+    "$($_.Name)  $name  $($_.FullName)"
+  }
 ```
 
 ### 旧 UWP 版（1.21.120 より前）
@@ -157,7 +176,7 @@ Get-ChildItem "$env:APPDATA\Minecraft Bedrock\Users\Shared\games\com.mojang\mine
 GDK 移行後は空のことが多いですが、古いインストールでは次の場所にあります。
 
 ```powershell
-"$env:LOCALAPPDATA\Packages\Microsoft.MinecraftUWP_8wekyb3d8bbwe\LocalState\games\com.mojang\minecraftWorlds\<ワールドフォルダ>"
+"$env:LOCALAPPDATA\Packages\Microsoft.MinecraftUWP_8wekyb3d8bbwe\LocalState\games\com.mojang\minecraftWorlds\<ワールドID>"
 ```
 
 ### うまく開けないとき
@@ -216,12 +235,10 @@ GDK 移行後は空のことが多いですが、古いインストールでは�
 
 ```powershell
 # チャンク (0,0) の 1 個だけ
-chunk-reset "$env:APPDATA\Minecraft Bedrock\Users\Shared\games\com.mojang\minecraftWorlds\AbcDeFGhiJKlmNoPq" `
-  --from 0,0 --to 0,0 --chunk-coords --dry-run
+chunk-reset $worldPath --from 0,0 --to 0,0 --chunk-coords --dry-run
 
 # チャンク x: 6〜12, z: 18〜25（最大 7×8 = 56 チャンク）
-chunk-reset "$env:APPDATA\Minecraft Bedrock\Users\Shared\games\com.mojang\minecraftWorlds\AbcDeFGhiJKlmNoPq" `
-  --from 6,18 --to 12,25 --chunk-coords --dry-run
+chunk-reset $worldPath --from 6,18 --to 12,25 --chunk-coords --dry-run
 ```
 
 ### どちらを使うべきか
