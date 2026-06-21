@@ -102,14 +102,14 @@ def build_selection(world, dimension: Dimension, area: ResetArea) -> SelectionGr
 
 def reset_chunks_in_area(
     world_path: str,
-    dimension: Dimension,
+    dimension_name: str,
     area: ResetArea,
     *,
     dry_run: bool = False,
 ) -> Iterator[str]:
     world = load_level(world_path)
-    world.open()
     try:
+        dimension = resolve_dimension(dimension_name, world.dimensions)
         selection = build_selection(world, dimension, area)
         chunks = [
             (cx, cz)

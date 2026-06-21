@@ -96,18 +96,10 @@ def main(argv: list[str] | None = None) -> int:
             print("Cancelled.", file=sys.stderr)
             return 1
 
-    from amulet.level.load import load_level
-
-    world = load_level(args.world)
-    try:
-        dimension = resolve_dimension(args.dimension, world.dimensions)
-    finally:
-        world.close()
-
     try:
         for line in reset_chunks_in_area(
             args.world,
-            dimension,
+            args.dimension,
             area,
             dry_run=args.dry_run,
         ):
