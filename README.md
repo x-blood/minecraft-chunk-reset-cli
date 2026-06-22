@@ -136,49 +136,6 @@ $worldId = "<ワールドID>"
 | `...\minecraftWorlds` | 複数ワールドの親フォルダ |
 | ゲーム内のワールド名だけ | フォルダ名は `<ワールドID>`（内部 ID）のため一致しない |
 
-### フォルダ構造（GDK 版 / 1.21.120 以降）
-
-```
-C:\Users\<Windowsユーザー名>\AppData\Roaming\Minecraft Bedrock\
-└── Users\
-    ├── <ユーザーID>\games\com.mojang\minecraftWorlds\   ← ★ サインイン時（よくある）
-    │   └── <ワールドID>\                               ← ★ world 引数（level.dat があるフォルダ）
-    └── Shared\games\com.mojang\minecraftWorlds\         ← サインアウト時・共有
-        └── <ワールドID>\
-```
-
-PowerShell では `$env:APPDATA` が上記の `...\AppData\Roaming\` に相当します。
-
-### ワールドフォルダの探し方
-
-1. `Win + R` を押し、`%appdata%\Minecraft Bedrock\Users` と入力して Enter（※ Run ダイアログでは `%appdata%` が使えます）
-2. **`<ユーザーID>`**（数字だけの長いフォルダ名）を開く  
-   - サインイン中の Microsoft アカウント用（**最も一般的**）  
-   - 見当たらない場合は **`Shared`**（サインアウト状態・共有プロファイル）
-3. `games` → `com.mojang` → `minecraftWorlds` と進む
-4. 中の **`<ワールドID>` フォルダ** が 1 ワールド分  
-   - 英数字に加え、末尾に **`=`** が付くことがある  
-   - `level.dat` と `db` フォルダ（LevelDB）があることを確認
-   - ゲーム内表示名は `levelname.txt` に書かれていることが多い
-
-PowerShell で `Users` 配下のワールドを一覧する例:
-
-```powershell
-Get-ChildItem "$env:APPDATA\Minecraft Bedrock\Users\*\games\com.mojang\minecraftWorlds\*" -Directory |
-  ForEach-Object {
-    $name = Get-Content (Join-Path $_.FullName 'levelname.txt') -ErrorAction SilentlyContinue
-    "$($_.Name)  $name  $($_.FullName)"
-  }
-```
-
-### 旧 UWP 版（1.21.120 より前）
-
-GDK 移行後は空のことが多いですが、古いインストールでは次の場所にあります。
-
-```powershell
-"$env:LOCALAPPDATA\Packages\Microsoft.MinecraftUWP_8wekyb3d8bbwe\LocalState\games\com.mojang\minecraftWorlds\<ワールドID>"
-```
-
 ### うまく開けないとき
 
 - Minecraft を完全終了してから再実行
