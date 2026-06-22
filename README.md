@@ -30,9 +30,6 @@ pip install -e .
 
 インストール後、`chunk-reset --help` でヘルプが表示されれば OK です。
 
-> `Activate.ps1` の実行が拒否される場合は、管理者 PowerShell で  
-> `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser` を一度実行してください。
-
 ---
 
 ## 基本的な使い方
@@ -58,10 +55,10 @@ pip install -e .
 
 以降のコマンド例では、次のプレースホルダーを PowerShell 変数に置き換えて使います。
 
-| プレースホルダー | 意味 | 例（あくまで参考） |
-|-----------------|------|-------------------|
-| `<ユーザーID>` | Microsoft アカウントごとのフォルダ名 | `907912747214718426` |
-| `<ワールドID>` | `minecraftWorlds` 直下のワールドフォルダ名 | `f2Tvgy1XaCQ=` |
+| プレースホルダー | 意味 | 形式の目安 |
+|-----------------|------|-----------|
+| `<ユーザーID>` | Microsoft アカウントごとのフォルダ名 | 数字のみの長い文字列 |
+| `<ワールドID>` | `minecraftWorlds` 直下のワールドフォルダ名 | 英数字（末尾に `=` があることもある） |
 
 ```powershell
 # ご自身の環境の値に置き換える
@@ -70,16 +67,7 @@ $worldId = "<ワールドID>"
 $worldPath = "$env:APPDATA\Minecraft Bedrock\Users\$userId\games\com.mojang\minecraftWorlds\$worldId"
 ```
 
-サインアウト時など **`Shared` 配下** の場合:
-
-```powershell
-$worldId = "<ワールドID>"
-$worldPath = "$env:APPDATA\Minecraft Bedrock\Users\Shared\games\com.mojang\minecraftWorlds\$worldId"
-```
-
 #### ② dry-run で確認
-
-Microsoft アカウントでサインインしている場合、ワールドは **`Users\Shared` ではなく `<ユーザーID>` フォルダ** 配下にあることが多いです。
 
 ```powershell
 chunk-reset $worldPath --from 0,0 --to 100,100 --dry-run
