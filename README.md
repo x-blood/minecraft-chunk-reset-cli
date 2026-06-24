@@ -1,26 +1,59 @@
 # Chunk Reset CLI
 
-Minecraft **統合版（Bedrock Edition）** および Java 版のワールドについて、指定した矩形範囲内のチャンクを削除し、次回ゲーム内訪問時に再生成されるようにする CLI ツールです。
+A command-line tool that deletes chunks within a rectangular area in **Minecraft Bedrock Edition** and Java Edition worlds, so they regenerate the next time you visit them in-game.
 
-主な利用想定は **Windows + PowerShell 上の統合版** です。[Amulet Core](https://github.com/Amulet-Team/Amulet-Core) を利用しており、Amulet Map Editor 本体への依存はありません。
+The primary target environment is **Windows + PowerShell with Bedrock Edition**. This tool uses [Amulet Core](https://github.com/Amulet-Team/Amulet-Core) as a library dependency and does **not** require the Amulet Map Editor application.
 
----
-
-## 目次
-
-1. [セットアップ（PowerShell）](#セットアップpowershell)
-2. [基本的な使い方](#基本的な使い方)
-3. [ワールドフォルダの場所（Windows 統合版）](#ワールドフォルダの場所windows-統合版)
-4. [座標の指定方法](#座標の指定方法)
-5. [オプション一覧](#オプション一覧)
+> Japanese: [README.ja.md](README.ja.md)
 
 ---
 
-## セットアップ（PowerShell）
+## Table of Contents
 
-Python **3.11 以上** が必要です（[python.org](https://www.python.org/downloads/) からインストール）。
+1. [Dependency Notice](#dependency-notice)
+2. [License](#license)
+3. [Setup (PowerShell)](#setup-powershell)
+4. [Basic Usage](#basic-usage)
+5. [World Folder Location (Windows Bedrock)](#world-folder-location-windows-bedrock)
+6. [Coordinate Specification](#coordinate-specification)
+7. [Options](#options)
 
-リポジトリを clone したら、プロジェクトのルートディレクトリで次を実行します。
+---
+
+## Dependency Notice
+
+This project depends on **Amulet-Core**.
+
+**This project does not redistribute any Amulet-Core source code.** Amulet-Core is used only as an external dependency installed via pip at runtime.
+
+**Users of this software must hold a valid license to use Amulet-Core.** Amulet-Core is proprietary software; a license must be purchased to use it. For details, see:
+
+https://www.amuletmc.com/legal
+
+### MIT License Publication
+
+The source code of **this project** is released under the [MIT License](LICENSE). Before publishing, the author confirmed on Discord with **gentlegiantJGC** (Amulet developer) that this would be acceptable, subject to the following conditions:
+
+- No Amulet-Core code is redistributed.
+- Users are clearly informed that a valid Amulet license is required.
+
+Permission was granted accordingly.
+
+---
+
+## License
+
+This project's source code is licensed under the MIT License. See [LICENSE](LICENSE) for the full text.
+
+Amulet-Core remains subject to its own license terms. Using this CLI does not grant any rights to Amulet-Core beyond what your Amulet license provides.
+
+---
+
+## Setup (PowerShell)
+
+Requires Python **3.11 or later** ([python.org](https://www.python.org/downloads/)).
+
+After cloning the repository, run the following from the project root:
 
 ```powershell
 py -3.11 -m venv .venv
@@ -28,201 +61,200 @@ py -3.11 -m venv .venv
 pip install -e .
 ```
 
-インストール後、`chunk-reset --help` でヘルプが表示されれば OK です。
+If `chunk-reset --help` displays the help text, installation succeeded.
+
+> **Note:** `pip install` will download Amulet-Core as a dependency. You must have a valid Amulet license to use Amulet-Core legally.
 
 ---
 
-## 基本的な使い方
+## Basic Usage
 
-### 事前準備（必須）
+### Before You Run (Required)
 
-1. **ワールドのバックアップ** を取る
-2. **Minecraft を完全終了** する（LevelDB がロックされていると失敗します）
+1. **Back up your world**
+2. **Fully close Minecraft** (the tool will fail if LevelDB is locked)
 
-### 実行の流れ
+### Workflow
 
 ```
-① ワールドフォルダのパスを特定する
+① Identify the world folder path
         ↓
-② --dry-run で対象チャンクを確認する（パスが正しいかもここで確認）
+② Run with --dry-run to verify the target chunks (and confirm the path)
         ↓
-③ 問題なければ本実行する
+③ Run for real if everything looks correct
 ```
 
-#### ① ワールドパスを特定
+#### ① Find the World Path
 
-[ワールドフォルダの場所](#ワールドフォルダの場所windows-統合版) を参照し、`level.dat` と `db` フォルダがある **個別ワールドフォルダ** のパスを控えます。
+See [World Folder Location](#world-folder-location-windows-bedrock). You need the path to an **individual world folder** that contains `level.dat` and a `db` folder.
 
-以降のコマンド例では、次のプレースホルダーを PowerShell 変数に置き換えて使います。
+Replace the placeholders below with your environment's values:
 
-| プレースホルダー | 意味 | 形式の目安 |
-|-----------------|------|-----------|
-| `<ユーザーID>` | Microsoft アカウントごとのフォルダ名 | 数字のみの長い文字列 |
-| `<ワールドID>` | `minecraftWorlds` 直下のワールドフォルダ名 | 英数字（末尾に `=` があることもある） |
+| Placeholder | Meaning | Typical format |
+|-------------|---------|----------------|
+| `<USER_ID>` | Per–Microsoft-account folder name | Long numeric string |
+| `<WORLD_ID>` | World folder name under `minecraftWorlds` | Alphanumeric (may end with `=`) |
 
 ```powershell
-# ご自身の環境の値に置き換える
-$userId = "<ユーザーID>"
-$worldId = "<ワールドID>"
+$userId = "<USER_ID>"
+$worldId = "<WORLD_ID>"
 $worldPath = "$env:APPDATA\Minecraft Bedrock\Users\$userId\games\com.mojang\minecraftWorlds\$worldId"
 ```
 
-#### ② dry-run で確認
+#### ② Dry Run
 
 ```powershell
 chunk-reset $worldPath --from 0,0 --to 100,100 --dry-run
 ```
 
-- `World: ...` と表示されれば **パスは正しい**
-- `Chunks to delete (exist): N` で削除対象数を確認
-- 各チャンク座標 `(cx, cz)` が一覧表示される
+- If `World: ...` is printed, the **path is correct**
+- `Chunks to delete (exist): N` shows how many chunks would be deleted
+- Each chunk coordinate `(cx, cz)` is listed
 
-#### ③ 本実行
+#### ③ Execute
 
 ```powershell
 chunk-reset $worldPath --from 0,0 --to 100,100
 ```
 
-確認プロンプトが表示されます。スキップする場合は `-y` を付けます。
+A confirmation prompt appears. Use `-y` to skip it:
 
 ```powershell
 chunk-reset $worldPath --from 100,300 --to 200,400 -y
 ```
 
-### その他の例
+### Other Examples
 
 ```powershell
-# チャンク座標で指定
+# Chunk coordinates
 chunk-reset $worldPath --from 6,18 --to 12,25 --chunk-coords --dry-run
 
-# ネザー / エンド
+# Nether / End
 chunk-reset $worldPath --from 0,0 --to 100,100 --dimension nether --dry-run
 ```
 
-> **パスの書き方:** `Minecraft Bedrock` にスペースが含まれるため、パスは **`"..."` で囲む** 必要があります。`<ワールドID>` の末尾に **`=`** が付くことがあります。環境変数は PowerShell では **`$env:APPDATA`** の形式を使います（`%APPDATA%` は cmd 用で、PowerShell では展開されません）。
+> **Path tips:** Because `Minecraft Bedrock` contains a space, quote paths when needed. `<WORLD_ID>` may end with **`=`**. In PowerShell use **`$env:APPDATA`** (not `%APPDATA%`, which is for cmd).
 
 ---
 
-## ワールドフォルダの場所（Windows 統合版）
+## World Folder Location (Windows Bedrock)
 
-### 指定するパス
+### Path to Pass
 
-`chunk-reset` の第 1 引数 `world` に渡すのは **個々のワールドフォルダ** です。
+The first argument `world` must be an **individual world folder**:
 
 ```powershell
-# PowerShell でパスを組み立てる例（<ユーザーID> / <ワールドID> は環境ごとに異なる）
-$userId = "<ユーザーID>"
-$worldId = "<ワールドID>"
+$userId = "<USER_ID>"
+$worldId = "<WORLD_ID>"
 "$env:APPDATA\Minecraft Bedrock\Users\$userId\games\com.mojang\minecraftWorlds\$worldId"
 ```
 
-**指定してはいけない例:**
+**Do not pass:**
 
-| パス | 理由 |
-|------|------|
-| `...\Minecraft Bedrock\Users` | ワールド本体ではなくユーザー一覧 |
-| `...\minecraftWorlds` | 複数ワールドの親フォルダ |
-| ゲーム内のワールド名だけ | フォルダ名は `<ワールドID>`（内部 ID）のため一致しない |
+| Path | Reason |
+|------|--------|
+| `...\Minecraft Bedrock\Users` | User list, not a world |
+| `...\minecraftWorlds` | Parent folder of multiple worlds |
+| In-game world display name only | Folder name is the internal `<WORLD_ID>` |
 
-### うまく開けないとき
+### Troubleshooting
 
-- Minecraft を完全終了してから再実行
-- パス先に `level.dat` があるか確認
-- `--dry-run` で `World: ...` が表示されればパスは正しい
-- ゲーム内でワールドを `.mcworld` にエクスポートし、解凍したフォルダを指定する（バックアップ兼テスト向き）
+- Fully close Minecraft and retry
+- Confirm `level.dat` exists at the path
+- If `--dry-run` shows `World: ...`, the path is correct
+- Export the world as `.mcworld` in-game, extract it, and point the tool at that folder (good for backup/testing)
 
 ---
 
-## 座標の指定方法
+## Coordinate Specification
 
-`--from` と `--to` には **X,Z の 2 値**（カンマ区切り）を指定します。Y 座標は不要で、**ワールドの高さ全体** が対象になります。
+`--from` and `--to` take **two X,Z values** (comma-separated). Y is not used; the **full world height** is affected.
 
-### 共通ルール
+### Common Rules
 
-- `--from` / `--to` の **順序は問いません**（自動で min/max に並べ替え）
-- 両端とも **inclusive**（指定した座標を含む）
-- 削除単位は **チャンク（16×16 ブロック）**。範囲に触れたチャンクは **チャンク全体** が削除される
-- **マイナス座標も指定可能**（原点より西・北側のエリアなど）
+- Order of `--from` / `--to` does not matter (min/max are computed automatically)
+- Both ends are **inclusive**
+- Deletion is in **chunk (16×16 block) units**; any touched chunk is removed **entirely**
+- **Negative coordinates** are supported
 
-### マイナス座標を指定するとき
+### Negative Coordinates in PowerShell
 
-座標計算自体はマイナス値に対応しています（例: `--from=-352,736`）。  
-ただし PowerShell から **スペース区切り** で渡すと、`-352,736` が別オプションと誤解釈され **エラー** になることがあります。
+Space-separated arguments can make values like `-352,736` look like options. Prefer `=` syntax:
 
 ```powershell
-# NG: スペース区切り（マイナス値がオプション扱いになりやすい）
+# Bad: space-separated (negative values may be parsed as options)
 chunk-reset $worldPath --from -352,736 --to -100,800 --dry-run
 
-# OK: = 形式（推奨）
+# Good: = syntax (recommended)
 chunk-reset $worldPath --from=-352,736 --to=-100,800 --dry-run
 
-# OK: ダブルクォート
+# Good: quoted
 chunk-reset $worldPath --from "-352,736" --to "-100,800" --dry-run
 ```
 
-正の座標（例: `--from 100,200`）はスペース区切りのままで問題ありません。
+Positive coordinates (e.g. `--from 100,200`) work fine with spaces.
 
-### ブロック座標（既定）
+### Block Coordinates (Default)
 
-ゲーム内座標（統合版の座標表示など）を **ブロック座標** として解釈します。指定範囲は **16 ブロック単位のチャンク境界にスナップ** されます（Amulet Map Editor の Chunk ツールと同じ）。
+In-game coordinates are treated as **block coordinates**. The range is **snapped to 16-block chunk boundaries** (same behavior as Amulet Map Editor's Chunk tool).
 
 ```
-チャンク (0,0) = ブロック x: 0〜15,  z: 0〜15
-チャンク (1,0) = ブロック x: 16〜31, z: 0〜15
-チャンク (0,1) = ブロック x: 0〜15,  z: 16〜31
+Chunk (0,0) = blocks x: 0–15,  z: 0–15
+Chunk (1,0) = blocks x: 16–31, z: 0–15
+Chunk (0,1) = blocks x: 0–15,  z: 16–31
 ```
 
-#### 例: ごく小さな範囲（`--from 1,5 --to 2,10`）
+#### Example: Small Range (`--from 1,5 --to 2,10`)
 
-| 項目 | 値 |
-|------|-----|
-| 指定範囲（ブロック） | x: 1〜2, z: 5〜10 |
-| スナップ後 | x: 0〜15, z: 0〜15 |
-| 削除されるチャンク | **`(0, 0)` の 1 チャンクのみ** |
+| Item | Value |
+|------|-------|
+| Specified range (blocks) | x: 1–2, z: 5–10 |
+| After snap | x: 0–15, z: 0–15 |
+| Chunks deleted | **`(0, 0)` only — one chunk** |
 
-4 ブロック分だけではなく、範囲がかかるチャンク `(0,0)` 全体（**16×16 ブロック**）が対象になります。
+Even a few blocks triggers deletion of the entire chunk `(0,0)` (**16×16 blocks**).
 
-#### 例: 複数チャンク（`--from 0,0 --to 31,31`）
+#### Example: Multiple Chunks (`--from 0,0 --to 31,31`)
 
-| 項目 | 値 |
-|------|-----|
-| 指定範囲（ブロック） | x: 0〜31, z: 0〜31 |
-| 削除されるチャンク | `(0,0)`, `(1,0)`, `(0,1)`, `(1,1)` の **4 チャンク** |
+| Item | Value |
+|------|-------|
+| Specified range (blocks) | x: 0–31, z: 0–31 |
+| Chunks deleted | `(0,0)`, `(1,0)`, `(0,1)`, `(1,1)` — **4 chunks** |
 
-#### 例: 広い範囲（`--from 100,300 --to 200,400`）
+#### Example: Larger Range (`--from 100,300 --to 200,400`)
 
-ブロック x: 100〜200, z: 300〜400 を含むすべてのチャンクが対象（スナップ後は x: 96〜207, z: 288〜415 相当）。
+All chunks covering blocks x: 100–200, z: 300–400 (after snap, roughly x: 96–207, z: 288–415).
 
-### チャンク座標（`--chunk-coords`）
+### Chunk Coordinates (`--chunk-coords`)
 
-チャンク番号で直接指定します（統合版の座標表示と対応）。
+Specify chunk indices directly:
 
 ```powershell
-# チャンク (0,0) の 1 個だけ
+# Single chunk (0,0)
 chunk-reset $worldPath --from 0,0 --to 0,0 --chunk-coords --dry-run
 
-# チャンク x: 6〜12, z: 18〜25（最大 7×8 = 56 チャンク）
+# Chunks x: 6–12, z: 18–25 (up to 7×8 = 56 chunks)
 chunk-reset $worldPath --from 6,18 --to 12,25 --chunk-coords --dry-run
 ```
 
-### どちらを使うべきか
+### Which Mode to Use
 
-| 目的 | おすすめ |
-|------|---------|
-| ゲーム内座標付近をリセットしたい | ブロック座標（既定） |
-| チャンク番号が分かっている | `--chunk-coords` |
-| 削除対象を正確に確認したい | 必ず `--dry-run` を先に実行 |
+| Goal | Recommendation |
+|------|----------------|
+| Reset near in-game coordinates | Block coordinates (default) |
+| You know chunk numbers | `--chunk-coords` |
+| Verify targets accurately | Always run `--dry-run` first |
 
 ---
 
-## オプション一覧
+## Options
 
-| オプション | 説明 |
-|-----------|------|
-| `world` | ワールドフォルダへのパス（`level.dat` があるフォルダ） |
-| `--from X,Z` | 範囲の一端（必須）。マイナス値は `--from=-352,736` 形式を推奨 |
-| `--to X,Z` | 範囲の反対側（必須）。マイナス値は `--to=-100,800` 形式を推奨 |
-| `--dimension`, `-d` | `overworld`（既定）, `nether`, `end` または `minecraft:overworld` 形式 |
-| `--chunk-coords` | 座標をチャンク座標として解釈 |
-| `--dry-run` | 対象チャンクを表示するだけで変更しない |
-| `-y`, `--yes` | 確認プロンプトをスキップ |
+| Option | Description |
+|--------|-------------|
+| `world` | Path to world folder (directory containing `level.dat`) |
+| `--from X,Z` | One corner (required). For negatives, prefer `--from=-352,736` |
+| `--to X,Z` | Opposite corner (required). For negatives, prefer `--to=-100,800` |
+| `--dimension`, `-d` | `overworld` (default), `nether`, `end`, or `minecraft:overworld` form |
+| `--chunk-coords` | Interpret coordinates as chunk indices |
+| `--dry-run` | List chunks without modifying the world |
+| `-y`, `--yes` | Skip confirmation prompt |

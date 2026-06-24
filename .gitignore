@@ -8,3 +8,4 @@ build/
 .Python
 *.swp
 .DS_Store
+*.code-workspace
