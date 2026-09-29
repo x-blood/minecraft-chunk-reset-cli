@@ -15,7 +15,7 @@ from chunk_reset_cli.area import (  # noqa: F401  (re-exported)
     ResetArea,
     normalize_dimension_name,
 )
-from chunk_reset_cli.pins import PinSet
+from chunk_reset_cli.pins import DimensionPins
 
 
 def resolve_dimension(name: str, available: Iterable[Dimension]) -> Dimension:
@@ -49,11 +49,12 @@ def reset_chunks_in_area(
     area: ResetArea,
     *,
     dry_run: bool = False,
-    pins: Optional[PinSet] = None,
+    pins: Optional[DimensionPins] = None,
 ) -> Iterator[str]:
     """Delete existing chunks inside ``area``.
 
-    If ``pins`` is given, pinned chunks inside the area are skipped.
+    If ``pins`` is given (pins of the target dimension), pinned chunks inside
+    the area are skipped.
     """
     world = load_level(world_path)
     try:
@@ -66,8 +67,12 @@ def reset_chunks_in_area(
         ]
         skipped = []
         if pins is not None:
-            skipped = [c for c in chunks if pins.contains(dimension, *c)]
-            chunks = [c for c in chunks if not pins.contains(dimension, *c)]
+            if pins.dimension != dimension:
+                raise ValueError(
+                    f"Pins are for {pins.dimension} but the target is {dimension}."
+                )
+            skipped = [c for c in chunks if pins.contains(*c)]
+            chunks = [c for c in chunks if not pins.contains(*c)]
         yield f"World: {world_path}"
         yield f"Dimension: {dimension}"
         yield (
@@ -143,7 +148,7 @@ def _delete_chunks_fast(world, dimension: Dimension, chunks: list) -> Iterator[f
 def reset_all_except_pins(
     world_path: str,
     dimension_name: str,
-    pins: PinSet,
+    pins: DimensionPins,
     *,
     dry_run: bool = False,
     confirm: Optional[Callable[[PrunePlan], bool]] = None,
@@ -152,12 +157,16 @@ def reset_all_except_pins(
 
     Safety guards (all raise :class:`PruneRefused`, nothing is modified):
 
-    * the pin file must define at least one pin for the target dimension;
+    * the pin file for the target dimension must define at least one pin;
     * at least one pinned chunk must actually exist in the world, so a
       wrong dimension or mistyped coordinates can never wipe everything.
     """
     normalized = normalize_dimension_name(dimension_name)
-    pin_rects = pins.rects(normalized)
+    if pins.dimension != normalized:
+        raise PruneRefused(
+            f"Pins are for {pins.dimension} but the target is {normalized}."
+        )
+    pin_rects = pins.rects
     if not pin_rects:
         raise PruneRefused(
             f"No pinned chunks are defined for {normalized} in the pin file. "
@@ -168,7 +177,7 @@ def reset_all_except_pins(
     try:
         dimension = resolve_dimension(dimension_name, world.dimensions)
         all_chunks = set(world.all_chunk_coords(dimension))
-        keep = sorted(c for c in all_chunks if pins.contains(dimension, *c))
+        keep = sorted(c for c in all_chunks if pins.contains(*c))
         if not keep:
             raise PruneRefused(
                 f"None of the {len(pin_rects)} pinned area(s) contain an existing "

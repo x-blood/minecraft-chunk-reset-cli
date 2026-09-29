@@ -250,49 +250,68 @@ chunk-reset $worldPath --from 6,18 --to 12,25 --chunk-coords --dry-run
 
 ## Pinned Chunks and `reset-all`
 
-Pinned chunks are chunks that `reset-all` will **never** delete. They are defined in a JSON file that you manage with `chunk-reset pin`. The pin commands only edit that JSON file; they never open or modify a world.
+Pinned chunks are chunks that `reset-all` will **never** delete. They are stored in a **directory**, one JSON file per dimension, and managed with `chunk-reset pin`. The pin commands only edit those files; they never open or modify a world.
 
 `reset-all` deletes **every existing chunk in one dimension except the pinned ones**, so it is much more destructive than the rectangular reset. Back up the world first and always run `--dry-run` before a real run.
+
+### Pin Directory and File Names
+
+Pass the directory to `--pins` / `pin`. The file for the target dimension is chosen automatically by name:
+
+| Dimension (`--dimension`) | File in the pin directory |
+|---------------------------|---------------------------|
+| `overworld` (default) | `pin_overworld.json` |
+| `nether` | `pin_nether.json` |
+| `end` | `pin_end.json` |
+
+```
+pins/
+  pin_overworld.json
+  pin_nether.json
+  pin_end.json
+```
+
+Only the file for the dimension you are resetting is read. If it does not exist, the command fails.
 
 ### Safety Rules
 
 `reset-all` refuses to run (and changes nothing) unless:
 
-- the pin file exists, is valid, and defines **at least one pin for the target dimension**
+- the pin file for the target dimension exists, is valid, and defines **at least one pin**
 - **at least one pinned chunk actually exists** in the world (protects against a wrong dimension or mistyped coordinates)
 
-These checks also apply with `-y`. Only the dimension given by `--dimension` is affected; other dimensions are left untouched.
+These checks also apply with `-y`. Only the dimension given by `--dimension` is affected; other dimensions are left untouched. Each pin file records its own `dimension`, and a file whose `dimension` does not match its use (for example `pin_overworld.json` copied and renamed to `pin_end.json`) is rejected.
 
 ### Managing Pins
 
-Pins are stored as rectangles in **chunk coordinates**. `--from` / `--to` follow the same rules as the rectangular reset (block coordinates by default, `--chunk-coords` for chunk indices; see [Coordinate Specification](#coordinate-specification)).
+Pins are stored as rectangles in **chunk coordinates**. `--from` / `--to` follow the same rules as the rectangular reset (block coordinates by default, `--chunk-coords` for chunk indices; see [Coordinate Specification](#coordinate-specification)). `--dimension` defaults to `overworld`.
 
 ```powershell
-# Add a pin (creates the file if it does not exist)
-chunk-reset pin add pins.json --from 0,0 --to 100,100 --label base
-chunk-reset pin add pins.json --from=-352,736 --to=-100,800 --label farm
-chunk-reset pin add pins.json --from 0,0 --to 3,3 --chunk-coords --dimension nether
+# Add a pin (creates the directory and file if missing)
+chunk-reset pin add pins --from 0,0 --to 100,100 --label base
+chunk-reset pin add pins --from=-352,736 --to=-100,800 --label farm
+chunk-reset pin add pins --from 0,0 --to 3,3 --chunk-coords --dimension nether
 
-# Show pins (chunk coordinates)
-chunk-reset pin list pins.json
+# Show pins (chunk coordinates); all pin files, or one dimension
+chunk-reset pin list pins
+chunk-reset pin list pins --dimension nether
 
 # Remove a pin by label, or by exactly the same area
-chunk-reset pin remove pins.json --label farm
-chunk-reset pin remove pins.json --from 0,0 --to 100,100
+chunk-reset pin remove pins --label farm
+chunk-reset pin remove pins --from 0,0 --to 100,100
 ```
 
-Labels are optional but must be unique. Removing by area only matches a pin with exactly the same area (after snapping to chunks); use `pin list` to check.
+Labels are optional but must be unique within a dimension. Removing by area only matches a pin with exactly the same area (after snapping to chunks); use `pin list` to check.
 
-File format:
+File format (`pin_overworld.json`):
 
 ```json
 {
   "version": 1,
-  "dimensions": {
-    "minecraft:overworld": [
-      {"from": [0, 0], "to": [6, 6], "label": "base"}
-    ]
-  }
+  "dimension": "minecraft:overworld",
+  "pins": [
+    {"from": [0, 0], "to": [6, 6], "label": "base"}
+  ]
 }
 ```
 
@@ -300,23 +319,26 @@ File format:
 
 ```powershell
 # 1. Check what would be kept and deleted
-chunk-reset reset-all $worldPath --pins pins.json --dry-run
+chunk-reset reset-all $worldPath --pins pins --dry-run
 
 # 2. Run for real (prompts for confirmation; -y skips the prompt)
-chunk-reset reset-all $worldPath --pins pins.json
+chunk-reset reset-all $worldPath --pins pins
+
+# Other dimensions use their own file (pin_nether.json)
+chunk-reset reset-all $worldPath --pins pins --dimension nether --dry-run
 ```
 
 The summary shows the number of existing chunks, pinned chunks kept, and chunks to delete. Chunks next to a pinned area are regenerated by the game, so terrain seams can appear along the border of a pinned area.
 
 ### Protecting Pins in a Rectangular Reset
 
-The normal rectangular reset can also honor a pin file. Pass `--pins` and pinned chunks inside the area are skipped:
+The normal rectangular reset can also honor the pins. Pass `--pins` with the directory and pinned chunks of the target dimension inside the area are skipped:
 
 ```powershell
-chunk-reset $worldPath --from 0,0 --to 300,300 --pins pins.json --dry-run
+chunk-reset $worldPath --from 0,0 --to 300,300 --pins pins --dry-run
 ```
 
-The output shows `Chunks skipped (pinned, exist): N`. Without `--pins`, the rectangular reset deletes everything in the area as before. Here the pin file is only used as a protection list, so an empty pin file is allowed (a rectangle is a bounded operation).
+The output shows `Chunks skipped (pinned, exist): N`. Without `--pins`, the rectangular reset deletes everything in the area as before. The pin file for the dimension must exist, but it may contain zero pins (a rectangle is a bounded operation).
 
 ---
 
@@ -329,6 +351,6 @@ The output shows `Chunks skipped (pinned, exist): N`. Without `--pins`, the rect
 | `--to X,Z` | Opposite corner (required). For negatives, prefer `--to=-100,800` |
 | `--dimension`, `-d` | `overworld` (default), `nether`, `end`, or `minecraft:overworld` form |
 | `--chunk-coords` | Interpret coordinates as chunk indices |
-| `--pins FILE` | Skip pinned chunks listed in the pin JSON file |
+| `--pins DIR` | Skip pinned chunks (reads `pin_<dimension>.json` in DIR) |
 | `--dry-run` | List chunks without modifying the world |
 | `-y`, `--yes` | Skip confirmation prompt |

@@ -21,6 +21,24 @@ def normalize_dimension_name(name: str) -> str:
     return DIMENSION_ALIASES.get(name.lower(), name)
 
 
+_DIMENSION_FILE_KEYS = {
+    "minecraft:overworld": "overworld",
+    "minecraft:the_nether": "nether",
+    "minecraft:the_end": "end",
+}
+
+
+def dimension_file_key(dimension: str) -> str:
+    """Short name used in file names: overworld / nether / end.
+
+    Other (custom) dimensions get a sanitized version of their id.
+    """
+    normalized = normalize_dimension_name(dimension)
+    if normalized in _DIMENSION_FILE_KEYS:
+        return _DIMENSION_FILE_KEYS[normalized]
+    return "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in normalized)
+
+
 @dataclass(frozen=True)
 class ResetArea:
     min_x: int

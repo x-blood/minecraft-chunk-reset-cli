@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 
 from chunk_reset_cli.area import ResetArea, normalize_dimension_name
 from chunk_reset_cli.pins import (
+    DimensionPins,
     PinFileError,
     PinRect,
-    PinSet,
-    load_pins,
-    save_pins,
+    list_pin_files,
+    load_dimension_pins,
+    pin_file_name,
+    save_dimension_pins,
 )
 
 
@@ -33,8 +36,8 @@ def build_parser() -> argparse.ArgumentParser:
         ),
         epilog=(
             "Other commands (run with --help for details):\n"
-            "  chunk-reset pin add|remove|list PINFILE   manage pinned (protected) chunks\n"
-            "  chunk-reset reset-all WORLD --pins PINFILE  delete everything except pinned chunks"
+            "  chunk-reset pin add|remove|list PINDIR      manage pinned (protected) chunks\n"
+            "  chunk-reset reset-all WORLD --pins PINDIR  delete everything except pinned chunks"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -76,8 +79,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--pins",
-        metavar="FILE",
-        help="Pin JSON file: pinned chunks inside the area are NOT deleted",
+        metavar="DIR",
+        help=(
+            "Directory with pin_<dimension>.json files: pinned chunks of the "
+            "target dimension inside the area are NOT deleted"
+        ),
     )
     parser.add_argument(
         "-y",
@@ -97,7 +103,7 @@ def _reset_area_main(argv: list[str]) -> int:
     pins = None
     if args.pins:
         try:
-            pins = load_pins(args.pins)
+            pins = load_dimension_pins(args.pins, args.dimension)
         except PinFileError as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return 1
@@ -182,28 +188,33 @@ def build_pin_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="chunk-reset pin",
         description=(
-            "Manage the JSON file that defines pinned chunks "
-            "(chunks that reset-all will never delete). "
-            "This does not open or modify any world."
+            "Manage pinned chunks (chunks that reset-all will never delete). "
+            "Pins are stored in a directory, one file per dimension: "
+            "pin_overworld.json, pin_nether.json, pin_end.json. "
+            "These commands never open or modify a world."
         ),
     )
     sub = parser.add_subparsers(dest="action", required=True)
 
-    add = sub.add_parser("add", help="Pin an area (creates the file if missing)")
-    add.add_argument("file", help="Path to the pin JSON file")
+    add = sub.add_parser(
+        "add", help="Pin an area (creates the directory / file if missing)"
+    )
+    add.add_argument("dir", help="Directory holding the pin files")
     _add_area_args(add, required=True)
     add.add_argument("--dimension", "-d", default="overworld")
-    add.add_argument("--label", help="Optional unique name, usable with 'pin remove --label'")
+    add.add_argument("--label", help="Optional name, unique per dimension")
 
     remove = sub.add_parser("remove", help="Remove a pin by label or by exact area")
-    remove.add_argument("file", help="Path to the pin JSON file")
+    remove.add_argument("dir", help="Directory holding the pin files")
     remove.add_argument("--label", help="Label of the pin to remove")
     _add_area_args(remove, required=False)
     remove.add_argument("--dimension", "-d", default="overworld")
 
     lst = sub.add_parser("list", help="Show pinned areas (chunk coordinates)")
-    lst.add_argument("file", help="Path to the pin JSON file")
-    lst.add_argument("--dimension", "-d", help="Show only this dimension")
+    lst.add_argument("dir", help="Directory holding the pin files")
+    lst.add_argument(
+        "--dimension", "-d", help="Show only this dimension (default: all pin files)"
+    )
     return parser
 
 
@@ -213,58 +224,82 @@ def _pin_main(argv: list[str]) -> int:
 
     try:
         if args.action == "add":
-            created = not os.path.exists(args.file)
-            pins = PinSet() if created else load_pins(args.file)
+            dimension = normalize_dimension_name(args.dimension)
+            if os.path.isfile(args.dir):
+                raise PinFileError(f"Not a directory: {args.dir}")
+            created = not os.path.exists(os.path.join(args.dir, pin_file_name(dimension)))
+            pins = (
+                DimensionPins(dimension)
+                if created
+                else load_dimension_pins(args.dir, dimension)
+            )
             rect = _pin_rect_from_args(args, args.label)
-            pins.add(args.dimension, rect)
-            save_pins(args.file, pins)
-            print(f"{'Created' if created else 'Updated'}: {args.file}")
-            print(f"Pinned in {normalize_dimension_name(args.dimension)}: {rect.describe()}")
+            pins.add(rect)
+            path = save_dimension_pins(args.dir, pins)
+            print(f"{'Created' if created else 'Updated'}: {path}")
+            print(f"Pinned in {dimension}: {rect.describe()}")
             return 0
-
-        pins = load_pins(args.file)
 
         if args.action == "remove":
             has_area = args.from_coord is not None or args.to_coord is not None
             if bool(args.label) == has_area:
                 parser.error("specify either --label, or both --from and --to")
+            if has_area and (args.from_coord is None or args.to_coord is None):
+                parser.error("--from and --to must be given together")
+            pins = load_dimension_pins(args.dir, args.dimension)
             if has_area:
-                if args.from_coord is None or args.to_coord is None:
-                    parser.error("--from and --to must be given together")
-                removed = pins.remove_by_area(args.dimension, _pin_rect_from_args(args))
-                dim = normalize_dimension_name(args.dimension)
+                removed = pins.remove_by_area(_pin_rect_from_args(args))
             else:
-                dim, removed = pins.remove_by_label(args.label)
-            save_pins(args.file, pins)
-            print(f"Removed from {dim}: {removed.describe()}")
-            if pins.total_rects() == 0:
+                removed = pins.remove_by_label(args.label)
+            save_dimension_pins(args.dir, pins)
+            print(f"Removed from {pins.dimension}: {removed.describe()}")
+            if not pins.rects:
                 print(
-                    "Note: no pins remain; reset-all will refuse to run with this file.",
+                    f"Note: no pins remain for {pins.dimension}; "
+                    "reset-all will refuse to run for it.",
                     file=sys.stderr,
                 )
             return 0
 
         # list
-        selected = (
-            {normalize_dimension_name(args.dimension)} if args.dimension else None
-        )
-        shown = 0
-        for dim, rects in sorted(pins.dimensions.items()):
-            if selected is not None and dim not in selected:
-                continue
-            print(f"{dim}:")
-            for rect in rects:
+        if args.dimension:
+            names = [pin_file_name(args.dimension)]
+            pin_sets = [load_dimension_pins(args.dir, args.dimension)]
+        else:
+            names = list_pin_files(args.dir)
+            pin_sets = [_load_by_file_name(args.dir, name) for name in names]
+        if not pin_sets:
+            print("(no pin files)")
+        for name, pins in zip(names, pin_sets):
+            print(f"{pins.dimension}  ({name}):")
+            if not pins.rects:
+                print("  (no pins)")
+            for rect in pins.rects:
                 print(f"  {rect.describe()}")
-                shown += 1
-        if shown == 0:
-            print("(no pins)")
         return 0
-    except PinFileError as exc:
+    except (PinFileError, OSError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
-    except OSError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        return 1
+
+
+def _load_by_file_name(directory: str, name: str) -> DimensionPins:
+    """Load a pin file found by naming convention, reading its dimension from the file."""
+    path = os.path.join(directory, name)
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise PinFileError(f"Cannot read pin file {path}: {exc}") from exc
+    dimension = data.get("dimension") if isinstance(data, dict) else None
+    if not isinstance(dimension, str):
+        raise PinFileError(f"{path}: 'dimension' must be a string.")
+    pins = load_dimension_pins(directory, dimension)
+    if pin_file_name(pins.dimension) != name:
+        raise PinFileError(
+            f"{path}: contains {pins.dimension} but the file name should be "
+            f"{pin_file_name(pins.dimension)}."
+        )
+    return pins
 
 
 # ---------------------------------------------------------------------------
@@ -277,7 +312,8 @@ def build_reset_all_parser() -> argparse.ArgumentParser:
         prog="chunk-reset reset-all",
         description=(
             "Delete EVERY existing chunk in one dimension except the pinned chunks. "
-            "Requires a pin file with at least one pin in that dimension, "
+            "Requires the pin file of that dimension (pin_<dimension>.json in the --pins directory) "
+            "with at least one pin, "
             "and at least one pinned chunk that exists in the world. "
             "Back up your world and close Minecraft before running."
         ),
@@ -286,8 +322,11 @@ def build_reset_all_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--pins",
         required=True,
-        metavar="FILE",
-        help="Pin JSON file (see 'chunk-reset pin --help')",
+        metavar="DIR",
+        help=(
+            "Directory with pin_<dimension>.json files "
+            "(the file for --dimension is used; see 'chunk-reset pin --help')"
+        ),
     )
     parser.add_argument(
         "--dimension",
@@ -316,7 +355,7 @@ def _reset_all_main(argv: list[str]) -> int:
     args = parser.parse_args(argv)
 
     try:
-        pins = load_pins(args.pins)
+        pins = load_dimension_pins(args.pins, args.dimension)
     except PinFileError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
