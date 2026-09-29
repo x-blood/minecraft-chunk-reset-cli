@@ -16,7 +16,8 @@ Minecraft **統合版（Bedrock Edition）** および Java 版のワールド�
 4. [基本的な使い方](#基本的な使い方)
 5. [ワールドフォルダの場所（Windows 統合版）](#ワールドフォルダの場所windows-統合版)
 6. [座標の指定方法](#座標の指定方法)
-7. [オプション一覧](#オプション一覧)
+7. [固定チャンクと `reset-all`](#固定チャンクと-reset-all)
+8. [オプション一覧](#オプション一覧)
 
 ---
 
@@ -248,6 +249,100 @@ chunk-reset $worldPath --from 6,18 --to 12,25 --chunk-coords --dry-run
 
 ---
 
+## 固定チャンクと `reset-all`
+
+固定チャンクは、`reset-all` が **絶対に削除しない** チャンクです。**ディレクトリ** の中にディメンションごとの JSON ファイルとして保存し、`chunk-reset pin` で管理します。pin コマンドはそれらのファイルを編集するだけで、ワールドを開いたり変更したりしません。
+
+`reset-all` は、指定したディメンションの **固定チャンク以外の既存チャンクをすべて削除** します。矩形リセットよりはるかに破壊的なので、必ずバックアップを取り、本実行の前に `--dry-run` で確認してください。
+
+### 固定ディレクトリとファイル名
+
+`--pins` / `pin` にはディレクトリを渡します。対象ディメンションのファイルが、名前の規則で自動的に選ばれます。
+
+| ディメンション（`--dimension`） | 固定ディレクトリ内のファイル |
+|-------------------------------|---------------------------|
+| `overworld`（既定） | `pin_overworld.json` |
+| `nether` | `pin_nether.json` |
+| `end` | `pin_end.json` |
+
+```
+pins/
+  pin_overworld.json
+  pin_nether.json
+  pin_end.json
+```
+
+読み込まれるのは、リセット対象のディメンションのファイルだけです。そのファイルが存在しない場合はエラーになります。
+
+### 安全のための制約
+
+次の条件を満たさない場合、`reset-all` は何も変更せずに終了します。
+
+- 対象ディメンションの固定ファイルがあり、内容が正しく、**固定が 1 つ以上** 定義されている
+- 固定チャンクのうち **少なくとも 1 つが実際にワールドに存在する**（ディメンションや座標の指定ミスによる全削除を防ぐ）
+
+これらのチェックは `-y` を付けても有効です。対象は `--dimension` で指定した 1 ディメンションのみで、他のディメンションには触れません。各ファイルは自身の `dimension` を記録しており、使われ方と一致しないファイル（たとえば `pin_overworld.json` をコピーして `pin_end.json` にリネームしたもの）は拒否されます。
+
+### 固定チャンクの管理
+
+固定は **チャンク座標** の矩形として保存されます。`--from` / `--to` の指定方法は矩形リセットと同じです（既定はブロック座標、`--chunk-coords` でチャンク座標。[座標の指定方法](#座標の指定方法) を参照）。`--dimension` の既定は `overworld` です。
+
+```powershell
+# 追加（ディレクトリとファイルがなければ新規作成）
+chunk-reset pin add pins --from 0,0 --to 100,100 --label base
+chunk-reset pin add pins --from=-352,736 --to=-100,800 --label farm
+chunk-reset pin add pins --from 0,0 --to 3,3 --chunk-coords --dimension nether
+
+# 一覧（チャンク座標）。全ファイル、またはディメンション指定
+chunk-reset pin list pins
+chunk-reset pin list pins --dimension nether
+
+# ラベル、または完全に同じ範囲を指定して削除
+chunk-reset pin remove pins --label farm
+chunk-reset pin remove pins --from 0,0 --to 100,100
+```
+
+ラベルは任意ですが、同じディメンション内で重複できません。範囲指定での削除は、チャンクにスナップした後の範囲が **完全に一致** する固定だけが対象です。`pin list` で確認してください。
+
+ファイル形式（`pin_overworld.json`）:
+
+```json
+{
+  "version": 1,
+  "dimension": "minecraft:overworld",
+  "pins": [
+    {"from": [0, 0], "to": [6, 6], "label": "base"}
+  ]
+}
+```
+
+### `reset-all` の実行
+
+```powershell
+# 1. 残るチャンクと削除されるチャンクを確認
+chunk-reset reset-all $worldPath --pins pins --dry-run
+
+# 2. 本実行（確認プロンプトあり。-y でスキップ）
+chunk-reset reset-all $worldPath --pins pins
+
+# 他のディメンションはそれぞれのファイル（pin_nether.json）を使う
+chunk-reset reset-all $worldPath --pins pins --dimension nether --dry-run
+```
+
+存在するチャンク数、残る固定チャンク数、削除するチャンク数が表示されます。固定範囲の隣のチャンクはゲームが再生成するため、固定範囲の境界に地形の継ぎ目が出ることがあります。
+
+### 矩形リセットでの固定チャンクの保護
+
+通常の矩形リセットでも固定を使えます。`--pins` にディレクトリを渡すと、範囲内の、対象ディメンションの固定チャンクは削除されません。
+
+```powershell
+chunk-reset $worldPath --from 0,0 --to 300,300 --pins pins --dry-run
+```
+
+出力に `Chunks skipped (pinned, exist): N` が表示されます。`--pins` を付けない場合は、これまでどおり範囲内をすべて削除します。そのディメンションの固定ファイルは存在する必要がありますが、固定が 0 件でも実行できます（矩形削除は範囲が限定されるためです）。
+
+---
+
 ## オプション一覧
 
 | オプション | 説明 |
@@ -257,5 +352,6 @@ chunk-reset $worldPath --from 6,18 --to 12,25 --chunk-coords --dry-run
 | `--to X,Z` | 範囲の反対側（必須）。マイナス値は `--to=-100,800` 形式を推奨 |
 | `--dimension`, `-d` | `overworld`（既定）, `nether`, `end` または `minecraft:overworld` 形式 |
 | `--chunk-coords` | 座標をチャンク座標として解釈 |
+| `--pins DIR` | 固定チャンクを削除しない（DIR 内の `pin_<dimension>.json` を読み込む） |
 | `--dry-run` | 対象チャンクを表示するだけで変更しない |
 | `-y`, `--yes` | 確認プロンプトをスキップ |

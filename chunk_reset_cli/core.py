@@ -1,82 +1,25 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Iterator, Tuple
+from typing import Callable, Iterable, Iterator, Optional
 
+from amulet.api.chunk import Chunk
 from amulet.api.data_types import Dimension
 from amulet.api.selection import SelectionBox, SelectionGroup
 from amulet.level.load import load_level
 from amulet.operations.delete_chunk import delete_chunk
 
-CHUNK_SIZE = 16
-
-DIMENSION_ALIASES = {
-    "overworld": "minecraft:overworld",
-    "nether": "minecraft:the_nether",
-    "the_nether": "minecraft:the_nether",
-    "end": "minecraft:the_end",
-    "the_end": "minecraft:the_end",
-}
-
-
-@dataclass(frozen=True)
-class ResetArea:
-    min_x: int
-    min_z: int
-    max_x: int
-    max_z: int
-    chunk_coords: bool
-
-    @classmethod
-    def from_corners(
-        cls,
-        corner_a: Tuple[int, int],
-        corner_b: Tuple[int, int],
-        *,
-        chunk_coords: bool,
-    ) -> "ResetArea":
-        x1, z1 = corner_a
-        x2, z2 = corner_b
-        if chunk_coords:
-            min_cx, max_cx = sorted((x1, x2))
-            min_cz, max_cz = sorted((z1, z2))
-            return cls(
-                min_x=min_cx * CHUNK_SIZE,
-                min_z=min_cz * CHUNK_SIZE,
-                max_x=(max_cx + 1) * CHUNK_SIZE,
-                max_z=(max_cz + 1) * CHUNK_SIZE,
-                chunk_coords=True,
-            )
-
-        min_x, max_x = sorted((x1, x2))
-        min_z, max_z = sorted((z1, z2))
-        return cls(
-            min_x=(min_x // CHUNK_SIZE) * CHUNK_SIZE,
-            min_z=(min_z // CHUNK_SIZE) * CHUNK_SIZE,
-            max_x=((max_x // CHUNK_SIZE) + 1) * CHUNK_SIZE,
-            max_z=((max_z // CHUNK_SIZE) + 1) * CHUNK_SIZE,
-            chunk_coords=False,
-        )
-
-    def chunk_count(self) -> int:
-        width = (self.max_x - self.min_x) // CHUNK_SIZE
-        depth = (self.max_z - self.min_z) // CHUNK_SIZE
-        return width * depth
-
-    def chunk_coords_list(self) -> list[Tuple[int, int]]:
-        min_cx = self.min_x // CHUNK_SIZE
-        max_cx = self.max_x // CHUNK_SIZE
-        min_cz = self.min_z // CHUNK_SIZE
-        max_cz = self.max_z // CHUNK_SIZE
-        return [
-            (cx, cz)
-            for cx in range(min_cx, max_cx)
-            for cz in range(min_cz, max_cz)
-        ]
+from chunk_reset_cli.area import (  # noqa: F401  (re-exported)
+    CHUNK_SIZE,
+    DIMENSION_ALIASES,
+    ResetArea,
+    normalize_dimension_name,
+)
+from chunk_reset_cli.pins import DimensionPins
 
 
 def resolve_dimension(name: str, available: Iterable[Dimension]) -> Dimension:
-    normalized = DIMENSION_ALIASES.get(name.lower(), name)
+    normalized = normalize_dimension_name(name)
     dimensions = list(available)
     if normalized in dimensions:
         return normalized
@@ -106,7 +49,13 @@ def reset_chunks_in_area(
     area: ResetArea,
     *,
     dry_run: bool = False,
+    pins: Optional[DimensionPins] = None,
 ) -> Iterator[str]:
+    """Delete existing chunks inside ``area``.
+
+    If ``pins`` is given (pins of the target dimension), pinned chunks inside
+    the area are skipped.
+    """
     world = load_level(world_path)
     try:
         dimension = resolve_dimension(dimension_name, world.dimensions)
@@ -116,6 +65,14 @@ def reset_chunks_in_area(
             for cx, cz in selection.chunk_locations()
             if world.has_chunk(cx, cz, dimension)
         ]
+        skipped = []
+        if pins is not None:
+            if pins.dimension != dimension:
+                raise ValueError(
+                    f"Pins are for {pins.dimension} but the target is {dimension}."
+                )
+            skipped = [c for c in chunks if pins.contains(*c)]
+            chunks = [c for c in chunks if not pins.contains(*c)]
         yield f"World: {world_path}"
         yield f"Dimension: {dimension}"
         yield (
@@ -123,6 +80,8 @@ def reset_chunks_in_area(
             f"z={area.min_z}..{area.max_z - 1}"
         )
         yield f"Chunks in selection: {len(list(selection.chunk_locations()))}"
+        if pins is not None:
+            yield f"Chunks skipped (pinned, exist): {len(skipped)}"
         yield f"Chunks to delete (exist): {len(chunks)}"
 
         if dry_run:
@@ -134,14 +93,134 @@ def reset_chunks_in_area(
             yield "No chunks to delete."
             return
 
-        for progress in delete_chunk(world, dimension, selection, load_original=False):
-            if progress is not None:
+        if pins is None:
+            for progress in delete_chunk(
+                world, dimension, selection, load_original=False
+            ):
+                if progress is not None:
+                    yield f"Deleting... {progress * 100:.0f}%"
+        else:
+            # Delete only the non-pinned chunks (same mechanism as above).
+            for progress in _delete_chunks_fast(world, dimension, chunks):
                 yield f"Deleting... {progress * 100:.0f}%"
 
         yield "Saving world..."
         for chunk_index, chunk_count in world.save_iter():
             if chunk_count:
                 yield f"Saving... {chunk_index / chunk_count * 100:.0f}%"
+
+        yield "Done."
+    finally:
+        world.close()
+
+
+class PruneRefused(ValueError):
+    """reset-all refused to run because a safety condition was not met."""
+
+
+class PruneCancelled(Exception):
+    """The user declined the confirmation prompt."""
+
+
+@dataclass(frozen=True)
+class PrunePlan:
+    dimension: Dimension
+    total: int
+    keep: list
+    delete: list
+
+
+def _delete_chunks_fast(world, dimension: Dimension, chunks: list) -> Iterator[float]:
+    """Delete chunks without loading each original chunk for undo history.
+
+    Mirrors what Amulet's own ``delete_chunk`` operation does with
+    ``load_original=False`` (registers an empty placeholder as the original).
+    """
+    count = len(chunks)
+    for index, (cx, cz) in enumerate(chunks, start=1):
+        world.delete_chunk(cx, cz, dimension)
+        key = (dimension, cx, cz)
+        if key not in world.chunks._history_database:
+            world.chunks._register_original_entry(key, Chunk(cx, cz))
+        yield index / count
+
+
+def reset_all_except_pins(
+    world_path: str,
+    dimension_name: str,
+    pins: DimensionPins,
+    *,
+    dry_run: bool = False,
+    confirm: Optional[Callable[[PrunePlan], bool]] = None,
+) -> Iterator[str]:
+    """Delete every existing chunk in a dimension except the pinned ones.
+
+    Safety guards (all raise :class:`PruneRefused`, nothing is modified):
+
+    * the pin file for the target dimension must define at least one pin;
+    * at least one pinned chunk must actually exist in the world, so a
+      wrong dimension or mistyped coordinates can never wipe everything.
+    """
+    normalized = normalize_dimension_name(dimension_name)
+    if pins.dimension != normalized:
+        raise PruneRefused(
+            f"Pins are for {pins.dimension} but the target is {normalized}."
+        )
+    pin_rects = pins.rects
+    if not pin_rects:
+        raise PruneRefused(
+            f"No pinned chunks are defined for {normalized} in the pin file. "
+            "Refusing to delete all chunks. Add pins with 'chunk-reset pin add'."
+        )
+
+    world = load_level(world_path)
+    try:
+        dimension = resolve_dimension(dimension_name, world.dimensions)
+        all_chunks = set(world.all_chunk_coords(dimension))
+        keep = sorted(c for c in all_chunks if pins.contains(*c))
+        if not keep:
+            raise PruneRefused(
+                f"None of the {len(pin_rects)} pinned area(s) contain an existing "
+                f"chunk in {dimension}. Refusing to delete all chunks. "
+                "Check the dimension and pin coordinates."
+            )
+        delete = sorted(all_chunks - set(keep))
+        plan = PrunePlan(dimension, len(all_chunks), keep, delete)
+
+        yield f"World: {world_path}"
+        yield f"Dimension: {dimension}"
+        yield f"Pinned areas: {len(pin_rects)}"
+        yield f"Existing chunks: {plan.total}"
+        yield f"Chunks kept (pinned, exist): {len(keep)}"
+        yield f"Chunks to delete: {len(delete)}"
+
+        if dry_run:
+            for cx, cz in delete:
+                yield f"  chunk ({cx}, {cz})"
+            return
+
+        if not delete:
+            yield "No chunks to delete."
+            return
+
+        if confirm is not None and not confirm(plan):
+            raise PruneCancelled()
+
+        last_pct = -1
+        for progress in _delete_chunks_fast(world, dimension, delete):
+            pct = int(progress * 100)
+            if pct >= last_pct + 10 or pct == 100:
+                last_pct = pct
+                yield f"Deleting... {pct}%"
+
+        yield "Saving world..."
+        last_pct = -1
+        for chunk_index, chunk_count in world.save_iter():
+            if chunk_count:
+                pct = int(chunk_index / chunk_count * 100)
+                if pct >= last_pct + 10 or pct == 100:
+                    last_pct = pct
+                    yield f"Saving... {pct}%"
 
         yield "Done."
     finally:
