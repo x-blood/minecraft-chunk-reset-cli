@@ -16,7 +16,8 @@ Minecraft **統合版（Bedrock Edition）** および Java 版のワールド�
 4. [基本的な使い方](#基本的な使い方)
 5. [ワールドフォルダの場所（Windows 統合版）](#ワールドフォルダの場所windows-統合版)
 6. [座標の指定方法](#座標の指定方法)
-7. [オプション一覧](#オプション一覧)
+7. [固定チャンクと `reset-all`](#固定チャンクと-reset-all)
+8. [オプション一覧](#オプション一覧)
 
 ---
 
@@ -245,6 +246,68 @@ chunk-reset $worldPath --from 6,18 --to 12,25 --chunk-coords --dry-run
 | ゲーム内座標付近をリセットしたい | ブロック座標（既定） |
 | チャンク番号が分かっている | `--chunk-coords` |
 | 削除対象を正確に確認したい | 必ず `--dry-run` を先に実行 |
+
+---
+
+## 固定チャンクと `reset-all`
+
+固定チャンクは、`reset-all` が **絶対に削除しない** チャンクです。JSON ファイルに定義し、`chunk-reset pin` で管理します。pin コマンドは JSON ファイルを編集するだけで、ワールドを開いたり変更したりしません。
+
+`reset-all` は、指定したディメンションの **固定チャンク以外の既存チャンクをすべて削除** します。矩形リセットよりはるかに破壊的なので、必ずバックアップを取り、本実行の前に `--dry-run` で確認してください。
+
+### 安全のための制約
+
+次の条件を満たさない場合、`reset-all` は何も変更せずに終了します。
+
+- 固定チャンクの JSON があり、内容が正しく、**対象ディメンションに固定が 1 つ以上** 定義されている
+- 固定チャンクのうち **少なくとも 1 つが実際にワールドに存在する**（ディメンションや座標の指定ミスによる全削除を防ぐ）
+
+これらのチェックは `-y` を付けても有効です。対象は `--dimension` で指定した 1 ディメンションのみで、他のディメンションには触れません。
+
+### 固定チャンクの管理
+
+固定は **チャンク座標** の矩形として保存されます。`--from` / `--to` の指定方法は矩形リセットと同じです（既定はブロック座標、`--chunk-coords` でチャンク座標。[座標の指定方法](#座標の指定方法) を参照）。
+
+```powershell
+# 追加（ファイルがなければ新規作成）
+chunk-reset pin add pins.json --from 0,0 --to 100,100 --label base
+chunk-reset pin add pins.json --from=-352,736 --to=-100,800 --label farm
+chunk-reset pin add pins.json --from 0,0 --to 3,3 --chunk-coords --dimension nether
+
+# 一覧（チャンク座標）
+chunk-reset pin list pins.json
+
+# ラベル、または完全に同じ範囲を指定して削除
+chunk-reset pin remove pins.json --label farm
+chunk-reset pin remove pins.json --from 0,0 --to 100,100
+```
+
+ラベルは任意ですが、重複できません。範囲指定での削除は、チャンクにスナップした後の範囲が **完全に一致** する固定だけが対象です。`pin list` で確認してください。
+
+ファイル形式:
+
+```json
+{
+  "version": 1,
+  "dimensions": {
+    "minecraft:overworld": [
+      {"from": [0, 0], "to": [6, 6], "label": "base"}
+    ]
+  }
+}
+```
+
+### `reset-all` の実行
+
+```powershell
+# 1. 残るチャンクと削除されるチャンクを確認
+chunk-reset reset-all $worldPath --pins pins.json --dry-run
+
+# 2. 本実行（確認プロンプトあり。-y でスキップ）
+chunk-reset reset-all $worldPath --pins pins.json
+```
+
+存在するチャンク数、残る固定チャンク数、削除するチャンク数が表示されます。固定範囲の隣のチャンクはゲームが再生成するため、固定範囲の境界に地形の継ぎ目が出ることがあります。
 
 ---
 

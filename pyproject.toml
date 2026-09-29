@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "chunk-reset-cli"
 version = "0.1.0"
-description = "CLI tool to reset Minecraft world chunks in a rectangular area"
+description = "CLI tool to reset Minecraft world chunks in a rectangular area, or everything except pinned chunks"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
