@@ -75,6 +75,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="List chunks that would be deleted without modifying the world",
     )
     parser.add_argument(
+        "--pins",
+        metavar="FILE",
+        help="Pin JSON file: pinned chunks inside the area are NOT deleted",
+    )
+    parser.add_argument(
         "-y",
         "--yes",
         action="store_true",
@@ -88,6 +93,14 @@ def _reset_area_main(argv: list[str]) -> int:
 
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    pins = None
+    if args.pins:
+        try:
+            pins = load_pins(args.pins)
+        except PinFileError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
 
     area = ResetArea.from_corners(
         args.from_coord,
@@ -118,6 +131,7 @@ def _reset_area_main(argv: list[str]) -> int:
             args.dimension,
             area,
             dry_run=args.dry_run,
+            pins=pins,
         ):
             print(line)
     except Exception as exc:

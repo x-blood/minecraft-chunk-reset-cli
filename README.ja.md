@@ -309,6 +309,16 @@ chunk-reset reset-all $worldPath --pins pins.json
 
 存在するチャンク数、残る固定チャンク数、削除するチャンク数が表示されます。固定範囲の隣のチャンクはゲームが再生成するため、固定範囲の境界に地形の継ぎ目が出ることがあります。
 
+### 矩形リセットでの固定チャンクの保護
+
+通常の矩形リセットでも固定ファイルを使えます。`--pins` を付けると、範囲内の固定チャンクは削除されません。
+
+```powershell
+chunk-reset $worldPath --from 0,0 --to 300,300 --pins pins.json --dry-run
+```
+
+出力に `Chunks skipped (pinned, exist): N` が表示されます。`--pins` を付けない場合は、これまでどおり範囲内をすべて削除します。この用途では固定ファイルは保護リストとしてのみ使うため、固定が 0 件のファイルでも実行できます（矩形削除は範囲が限定されるためです）。
+
 ---
 
 ## オプション一覧
@@ -320,5 +330,6 @@ chunk-reset reset-all $worldPath --pins pins.json
 | `--to X,Z` | 範囲の反対側（必須）。マイナス値は `--to=-100,800` 形式を推奨 |
 | `--dimension`, `-d` | `overworld`（既定）, `nether`, `end` または `minecraft:overworld` 形式 |
 | `--chunk-coords` | 座標をチャンク座標として解釈 |
+| `--pins FILE` | 固定チャンクの JSON を読み込み、固定チャンクは削除しない |
 | `--dry-run` | 対象チャンクを表示するだけで変更しない |
 | `-y`, `--yes` | 確認プロンプトをスキップ |

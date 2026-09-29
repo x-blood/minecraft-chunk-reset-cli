@@ -49,7 +49,12 @@ def reset_chunks_in_area(
     area: ResetArea,
     *,
     dry_run: bool = False,
+    pins: Optional[PinSet] = None,
 ) -> Iterator[str]:
+    """Delete existing chunks inside ``area``.
+
+    If ``pins`` is given, pinned chunks inside the area are skipped.
+    """
     world = load_level(world_path)
     try:
         dimension = resolve_dimension(dimension_name, world.dimensions)
@@ -59,6 +64,10 @@ def reset_chunks_in_area(
             for cx, cz in selection.chunk_locations()
             if world.has_chunk(cx, cz, dimension)
         ]
+        skipped = []
+        if pins is not None:
+            skipped = [c for c in chunks if pins.contains(dimension, *c)]
+            chunks = [c for c in chunks if not pins.contains(dimension, *c)]
         yield f"World: {world_path}"
         yield f"Dimension: {dimension}"
         yield (
@@ -66,6 +75,8 @@ def reset_chunks_in_area(
             f"z={area.min_z}..{area.max_z - 1}"
         )
         yield f"Chunks in selection: {len(list(selection.chunk_locations()))}"
+        if pins is not None:
+            yield f"Chunks skipped (pinned, exist): {len(skipped)}"
         yield f"Chunks to delete (exist): {len(chunks)}"
 
         if dry_run:
@@ -77,8 +88,15 @@ def reset_chunks_in_area(
             yield "No chunks to delete."
             return
 
-        for progress in delete_chunk(world, dimension, selection, load_original=False):
-            if progress is not None:
+        if pins is None:
+            for progress in delete_chunk(
+                world, dimension, selection, load_original=False
+            ):
+                if progress is not None:
+                    yield f"Deleting... {progress * 100:.0f}%"
+        else:
+            # Delete only the non-pinned chunks (same mechanism as above).
+            for progress in _delete_chunks_fast(world, dimension, chunks):
                 yield f"Deleting... {progress * 100:.0f}%"
 
         yield "Saving world..."
